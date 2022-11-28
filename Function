@@ -1,0 +1,160 @@
+import cv2
+import numpy as np
+import math
+
+import matplotlib
+from matplotlib import pyplot as plt
+
+from termcolor import colored
+
+
+def plot_polygon(ax, shel, hole, **kwargs):
+    from shapely.geometry import Polygon
+    from matplotlib.path import Path
+    from matplotlib.patches import PathPatch
+    from matplotlib.collections import PatchCollection
+    poly = Polygon(shell = shel, holes = hole)
+    path = Path.make_compound_path(Path(np.asarray(poly.exterior.coords)[:, :2]),
+           *[Path(np.asarray(ring.coords)[:, :2]) for ring in poly.interiors])
+
+    patch = PathPatch(path, **kwargs)
+    collection = PatchCollection([patch], **kwargs)
+    
+    ax.add_collection(collection, autolim=True)
+    ax.autoscale_view()
+    return collection
+
+def Major_Minor(Input_Path):
+
+    Mat_Plt()
+    from math import isclose 
+    #-------------------------------------------------------------------------------------------------------
+    Gray_image = cv2.imread(Input_Path, cv2.IMREAD_GRAYSCALE)
+    RGB_image = cv2.cvtColor(Gray_image, cv2.COLOR_GRAY2RGB)
+    #-------------------------------------------------------------------------------------------------------
+    Gray_Array = np.array(Gray_image, dtype = 'uint8')
+    #-------------------------------------------------------------------------------------------------------
+    Contour, Hierarchy = cv2.findContours(Gray_image, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+
+    Contour_image = RGB_image.copy()
+    cv2.drawContours(Contour_image, Contour, len(Hierarchy[0])-1, (255, 0, 170), 1)
+
+    for l in range(len(Hierarchy[0])):
+        cv2.drawContours(Contour_image, Contour, l, (0, 255, 0), 1)
+    #-------------------------------------------------------------------------------------------------------
+    List = []
+    #Outer_Border_Points, Sorted_Holes_Borders = [], []
+    for c in range(len(Hierarchy[0])):
+        #Current_Hole = []
+        for p in Contour[c]:
+            point_array = np.array(p[0], dtype = 'int')
+            List.append(tuple(point_array))
+
+        """ if c == len(Hierarchy[0])-1:
+            for p in Contour[c]:
+                point_array = np.array(p[0], dtype = 'int')
+                Outer_Border_Points.append(tuple(point_array))
+                List.append(tuple(point_array))
+
+        else:
+            for p in Contour[c]:
+                point_array = np.array(p[0], dtype = 'int')
+                Current_Hole.append(tuple(point_array))
+                List.append(tuple(point_array))
+            Sorted_Holes_Borders.append(Current_Hole)
+
+    fig, ax = plt.subplots()
+    plt.title('Porous_Polygon'), plt.tick_params(axis = 'both', which = 'major', labelsize = 8)
+    Porous_Polygon = plot_polygon(ax, Outer_Border_Points, Sorted_Holes_Borders, facecolor = 'lightblue', edgecolor = 'red') """
+    #-------------------------------------------------------------------------------------------------------
+    Major_List = []
+    for p1 in range(0, len(List)):
+        for p2 in range(p1+1, len(List)):
+            Line_Image = np.zeros((Gray_image.shape), dtype = 'uint8')
+            cv2.line(Line_Image, List[p1], List[p2], (1), thickness = 1, lineType = cv2.LINE_8)
+            Stencil = cv2.bitwise_and(Line_Image, Gray_Array)
+            #-------------------------------------------------------------------------------------------------------
+            if (Stencil == Line_Image).all():
+                Distance = math.sqrt(math.pow(List[p1][0] - List[p2][0], 2) + math.pow(List[p1][1] - List[p2][1], 2))
+                Major_List.append([List[p1], List[p2], Distance])
+    #-------------------------------------------------------------------------------------------------------
+    Major_Axis = max(Major_List, key = lambda sublist: sublist[2])
+  
+    Major_Axis_Image = cv2.arrowedLine(RGB_image, Major_Axis[0], Major_Axis[1], (255, 0, 0), thickness = 2, tipLength = 0.015)
+    Major_Axis_Image = cv2.arrowedLine(RGB_image, Major_Axis[1], Major_Axis[0], (255, 0, 0), thickness = 2, tipLength = 0.015)
+    #-------------------------------------------------------------------------------------------------------
+    Minor_List = []
+    if (Major_Axis[1][1] - Major_Axis[0][1]) == 0:
+        for p1 in range(0, len(List)):
+            for p2 in range(p1+1, len(List)):
+                if (List[p1][0] - List[p2][0]) == 0:
+                    Minor_Line_Image = np.zeros((Gray_image.shape), dtype = 'uint8')
+                    cv2.line(Minor_Line_Image, List[p1], List[p2], (1), thickness = 1, lineType = cv2.LINE_8)
+                    Minor_Stencil = cv2.bitwise_and(Minor_Line_Image, Gray_Array)
+                    #-------------------------------------------------------------------------------------------------------
+                    if (Minor_Stencil == Minor_Line_Image).all():
+                        Minor_Distance = math.sqrt(math.pow(List[p1][0] - List[p2][0], 2) + math.pow(List[p1][1] - List[p2][1], 2))
+                        Minor_List.append([List[p1], List[p2], Minor_Distance])
+    #-------------------------------------------------------------------------------------------------------
+    elif (Major_Axis[1][0] - Major_Axis[0][0]) == 0:
+        for p1 in range(0, len(List)):
+            for p2 in range(p1+1, len(List)):
+                if (List[p1][1] - List[p2][1]) == 0:
+                    Minor_Line_Image = np.zeros((Gray_image.shape), dtype = 'uint8')
+                    cv2.line(Minor_Line_Image, List[p1], List[p2], (1), thickness = 1, lineType = cv2.LINE_8)
+                    Minor_Stencil = cv2.bitwise_and(Minor_Line_Image, Gray_Array)
+                    #-------------------------------------------------------------------------------------------------------
+                    if (Minor_Stencil == Minor_Line_Image).all():
+                        Minor_Distance = math.sqrt(math.pow(List[p1][0] - List[p2][0], 2) + math.pow(List[p1][1] - List[p2][1], 2))
+                        Minor_List.append([List[p1], List[p2], Minor_Distance])
+    #-------------------------------------------------------------------------------------------------------
+    else:
+        Minor_Axis_Slope = (-1) * (Major_Axis[1][1] - Major_Axis[0][1]) / (Major_Axis[1][0] - Major_Axis[0][0])
+        #Minor_Axis_Slope = (-1) * math.pow(Major_Axis_Slope, -1)
+        for p1 in range(0, len(List)):
+            for p2 in range(p1+1, len(List)):
+                if (List[p1][0] - List[p2][0]) != 0 and (List[p1][1] - List[p2][1]) != 0 and isclose(((List[p1][0] - List[p2][0]) / (List[p1][1] - List[p2][1])), Minor_Axis_Slope, abs_tol = 1e-2):
+                    Minor_Line_Image = np.zeros((Gray_image.shape), dtype = 'uint8')
+                    cv2.line(Minor_Line_Image, List[p1], List[p2], (1), thickness = 1, lineType = cv2.LINE_8)
+                    Minor_Stencil = cv2.bitwise_and(Minor_Line_Image, Gray_Array)
+                    #-------------------------------------------------------------------------------------------------------
+                    if (Minor_Stencil == Minor_Line_Image).all():
+                        Minor_Distance = math.sqrt(math.pow(List[p1][0] - List[p2][0], 2) + math.pow(List[p1][1] - List[p2][1], 2))
+                        Minor_List.append([List[p1], List[p2], Minor_Distance])
+    #-------------------------------------------------------------------------------------------------------
+    Minor_Axis = max(Minor_List, key = lambda sublist: sublist[2])
+    RGB_image_2 = RGB_image.copy()
+
+    Minor_Axis_Image = cv2.arrowedLine(RGB_image_2, Minor_Axis[0], Minor_Axis[1], (0, 0, 255), thickness = 2, tipLength = 0.015)
+    Minor_Axis_Image = cv2.arrowedLine(RGB_image_2, Minor_Axis[1], Minor_Axis[0], (0, 0, 255), thickness = 2, tipLength = 0.015)
+    #-------------------------------------------------------------------------------------------------------
+    plt.figure(figsize=(10, 15))
+    plt.subplots_adjust(wspace=0.2, hspace=0.4)
+    matplotlib.rcParams['font.size'] = 8
+
+    plt.subplot(2, 2, 1), plt.imshow(RGB_image)
+    plt.title('Input_image'), plt.tick_params(axis = 'both', which = 'major', labelsize = 8)
+
+    plt.subplot(2, 2, 2), plt.imshow(Contour_image)
+    plt.title('Input_image_&_Border'), plt.tick_params(axis = 'both', which = 'major', labelsize = 8)
+
+    plt.subplot(2, 2, 3), plt.imshow(Major_Axis_Image)
+    plt.title('Major_Axis_Image'), plt.tick_params(axis = 'both', which = 'major', labelsize = 8)
+  
+    plt.subplot(2, 2, 4), plt.imshow(Minor_Axis_Image)
+    plt.title('Major&Minor_Axis'), plt.tick_params(axis = 'both', which = 'major', labelsize = 8)
+    plt.show()
+    #-------------------------------------------------------------------------------------------------------
+    Major_Axis_Path = 'C:/Users/Aref Shaker/Pictures/Images Created by Python/Major_Axis.png'
+    Minor_Axis_Path = 'C:/Users/Aref Shaker/Pictures/Images Created by Python/Minor_Axis.png'
+    #-------------------------------------------------------------------------------------------------------
+    Status1 = cv2.imwrite(Major_Axis_Path, Major_Axis_Image.astype(np.uint8))
+    Status2 = cv2.imwrite(Minor_Axis_Path, Minor_Axis_Image.astype(np.uint8))
+    #-------------------------------------------------------------------------------------------------------
+    print(colored('Major Axis', 'yellow'), colored('image Major Axis End Points is', 'grey'), '[', Major_Axis[0], ', ', Major_Axis[1], ']')
+    print(colored('Minor Axis', 'yellow'), colored('image Minor Axis End Points is', 'grey'), '[', Minor_Axis[0], ', ', Minor_Axis[1], ']')
+    #-------------------------------------------------------------------------------------------------------
+    print(colored('Major&Minor Axis', 'yellow'), colored('images were written', 'grey'), colored('Successfully', 'green'), ': (', colored(Status1, 'green'), ', ', colored(Status2, 'green'), ')')
+    print(colored('ATTENTION:', 'red'), colored('written images path is', 'grey'), colored(Major_Axis_Path+'& Minor_Axis.png', 'blue'))
+  
+    return Major_Axis[2], Minor_Axis[2]
